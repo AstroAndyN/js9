@@ -1936,9 +1936,21 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
 };
 
 // store section information
+//++AMN++ 4/4/23@13:32 I think this is the function that needs fixing....
 JS9.Image.prototype.mkSection = function(...args){
     let s, xtra;
     const sect = this.rgb.sect;
+	console.log("++FLGa: initial sect:");
+	console.log("++FLGa1: "+(this.raw.width * sect.zoom)+" x "+(this.raw.height * sect.zoom));
+	console.log("++FLGa2: "+this.display.canvas.width+" x "+this.display.canvas.height);
+	const amnsect = (sect) => {
+		s = sprintf("Current section: %s x %s (%s, %s) [%s,%s, %s,%s, %s] (%s,%s)",
+		    sect.width, sect.height,
+			sect.xcen, sect.ycen,
+		    sect.x0, sect.y0, sect.x1, sect.y1,
+		    sect.zoom, sect.ix, sect.iy);
+		console.log(s);
+	}
     const getWidth = (zoom) => {
 	let len;
 	let canvas = this.display.canvas;
@@ -2012,64 +2024,78 @@ JS9.Image.prototype.mkSection = function(...args){
     // assume no offset when displaying section
     delete sect.ix;
     delete sect.iy;
+	console.log("++FLGb: initial calculated sect:");
+	amnsect(sect);
+
+	//++AMN++ This is the bit I think. This may need some "if" statmetns to deal withe zoomed-in/zoomed-out scenraios (possible more complicated iof zoomed-in onr one xis and zoomed-out on the other????)
     // calculate section limits from center and dimensions
-    sect.x0 = sect.xcen - (sect.width/(2*sect.zoom));
+
+	//++AMN++ This almost works for the zoomed-out version but (a) it goes all wrong for zoomed-in and (b) the panning is slower than the mouse moves...
+    // sect.x0 = Math.min(0, sect.xcen - (sect.width/(2*sect.zoom)));
+    // sect.y0 = Math.min(0, sect.ycen - (sect.height/(2*sect.zoom)));
+    // sect.x1 = Math.max(this.raw.width, sect.xcen + (sect.width/(2*sect.zoom)));
+    // sect.y1 = Math.max(this.raw.height, sect.ycen + (sect.height/(2*sect.zoom)));
+	sect.x0 = sect.xcen - (sect.width/(2*sect.zoom));
     sect.y0 = sect.ycen - (sect.height/(2*sect.zoom));
     sect.x1 = sect.xcen + (sect.width/(2*sect.zoom));
     sect.y1 = sect.ycen + (sect.height/(2*sect.zoom));
-    // make sure we're within bounds while maintaining section dimensions
+	console.log("++FLGb: bounding box for sect:");
+	amnsect(sect);
+	// make sure we're within bounds while maintaining section dimensions
     if( sect.x0 < 0 ){
-	if( JS9.globalOpts.panWithinDisplay ){
-            sect.x1 -= sect.x0;
-	} else {
-	    sect.ix = sect.x0 * sect.zoom;
-	}
+		if( JS9.globalOpts.panWithinDisplay ){
+				sect.x1 -= sect.x0;
+		} else {
+			sect.ix = sect.x0 * sect.zoom;
+		}
         sect.x0 = 0;
     }
     if( sect.y0 < 0 ){
-	if( JS9.globalOpts.panWithinDisplay ){
-            sect.y1 -= sect.y0;
-	} else {
-	    sect.iy = sect.y0 * sect.zoom;
-	}
+		if( JS9.globalOpts.panWithinDisplay ){
+				sect.y1 -= sect.y0;
+		} else {
+			sect.iy = sect.y0 * sect.zoom;
+		}
         sect.y0 = 0;
     }
     if( sect.x1 > this.raw.width ){
-	if( JS9.globalOpts.panWithinDisplay ){
-            sect.x0 -= (sect.x1 - this.raw.width);
-	} else {
-	    sect.ix = (sect.x1 - this.raw.width) * sect.zoom;
-	}
+		if( JS9.globalOpts.panWithinDisplay ){
+				sect.x0 -= (sect.x1 - this.raw.width);
+		} else {
+			sect.ix = (sect.x1 - this.raw.width) * sect.zoom;
+		}
         sect.x1 = this.raw.width;
     }
     if( sect.y1 > this.raw.height ){
-	if( JS9.globalOpts.panWithinDisplay ){
-            sect.y0 -= (sect.y1 - this.raw.height);
-	} else {
-	    sect.iy = (sect.y1 - this.raw.height) * sect.zoom;
-	}
+		if( JS9.globalOpts.panWithinDisplay ){
+				sect.y0 -= (sect.y1 - this.raw.height);
+		} else {
+			sect.iy = (sect.y1 - this.raw.height) * sect.zoom;
+		}
         sect.y1 = this.raw.height;
     }
+	console.log("++FLGb: After boundary checks:");
+	amnsect(sect);
     // for offset images, maybe display more of the image
     if( sect.ix > 0 && sect.x0 > 0 ){
-	xtra =  Math.min(sect.ix, sect.x0);
-	sect.x0 -= xtra;
-	sect.ix += xtra * sect.zoom;
+		xtra =  Math.min(sect.ix, sect.x0);
+		sect.x0 -= xtra;
+		sect.ix += xtra * sect.zoom;
     }
     if( sect.ix < 0 && sect.x1 < this.raw.width ){
-	xtra =  Math.min(this.raw.width - sect.x1, Math.abs(sect.ix));
-	sect.x1 += xtra;
-	sect.ix -= xtra * sect.zoom;
+		xtra =  Math.min(this.raw.width - sect.x1, Math.abs(sect.ix));
+		sect.x1 += xtra;
+		sect.ix -= xtra * sect.zoom;
     }
     if( sect.iy > 0 && sect.y0 > 0 ){
-	xtra =  Math.min(sect.iy, sect.y0);
-	sect.y0 -= xtra;
-	sect.iy += xtra * sect.zoom;
+		xtra =  Math.min(sect.iy, sect.y0);
+		sect.y0 -= xtra;
+		sect.iy += xtra * sect.zoom;
     }
     if( sect.iy < 0 && sect.y1 < this.raw.height ){
-	xtra =  Math.min(this.raw.height - sect.y1, Math.abs(sect.iy));
-	sect.y1 += xtra;
-	sect.iy -= xtra * sect.zoom;
+		xtra =  Math.min(this.raw.height - sect.y1, Math.abs(sect.iy));
+		sect.y1 += xtra;
+		sect.iy -= xtra * sect.zoom;
     }
     // final check: make sure we're within bounds
     sect.x0 = Math.max(0, sect.x0);
@@ -2092,6 +2118,8 @@ JS9.Image.prototype.mkSection = function(...args){
 		    sect.zoom);
 	JS9.error(s);
     }
+	console.log("++FLGc: final calculated sect:");
+	amnsect(sect);
     // put zoom back into params
     this.params.zoom = sect.zoom;
     // allow chaining
