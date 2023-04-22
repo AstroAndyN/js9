@@ -1936,29 +1936,21 @@ JS9.Image.prototype.mkRawDataFromHDU = function(obj, opts){
 };
 
 // store section information
-//++AMN++ 4/4/23@13:32 I think this is the function that needs fixing....
+//AMN 22/04/23: Modified to fix bug when panning zoomed-out image
 JS9.Image.prototype.mkSection = function(...args){
-    let s, xtra;
+    let s, xtra, border;
     const sect = this.rgb.sect;
-	console.log("++FLGa: initial sect:");
-	console.log("++FLGa1: "+(this.raw.width * sect.zoom)+" x "+(this.raw.height * sect.zoom));
-	console.log("++FLGa2: "+this.display.canvas.width+" x "+this.display.canvas.height);
-	const amnsect = (sect) => {
-		s = sprintf("Current section: %s x %s (%s, %s) [%s,%s, %s,%s, %s] (%s,%s)",
-		    sect.width, sect.height,
-			sect.xcen, sect.ycen,
-		    sect.x0, sect.y0, sect.x1, sect.y1,
-		    sect.zoom, sect.ix, sect.iy);
-		console.log(s);
-	}
+	// AMN getWidth/getHeight should return width/height of the canvas for all circumstances, regardless of hth state of zoom etc.
     const getWidth = (zoom) => {
 	let len;
 	let canvas = this.display.canvas;
 	if( this.params.transformAngle ){
 	    len = Math.max(canvas.width, canvas.height);
-	    return Math.min(this.raw.width * zoom, len);
+	    //return Math.min(this.raw.width * zoom, len);
+		return len;
 	} else {
-	    return Math.min(this.raw.width * zoom, canvas.width);
+	    //return Math.min(this.raw.width * zoom, canvas.width);
+		return canvas.width;
 	}
     };
     const getHeight = (zoom) => {
@@ -1966,9 +1958,11 @@ JS9.Image.prototype.mkSection = function(...args){
 	let canvas = this.display.canvas;
 	if( this.params.transformAngle ){
 	    len = Math.max(canvas.width, canvas.height);
-	    return Math.min(this.raw.height * zoom, len);
+	    //return Math.min(this.raw.height * zoom, len);
+		return len;
 	} else {
-	    return Math.min(this.raw.height * zoom, canvas.height);
+	    //return Math.min(this.raw.height * zoom, canvas.height);
+		return canvas.height;
 	}
     };
     // save zoom in case we are about to change it (regions have to be scaled)
@@ -2021,87 +2015,86 @@ JS9.Image.prototype.mkSection = function(...args){
     default:
 	break;
     }
-    // assume no offset when displaying section
-    delete sect.ix;
-    delete sect.iy;
-	console.log("++FLGb: initial calculated sect:");
-	amnsect(sect);
 
-	//++AMN++ This is the bit I think. This may need some "if" statmetns to deal withe zoomed-in/zoomed-out scenraios (possible more complicated iof zoomed-in onr one xis and zoomed-out on the other????)
-    // calculate section limits from center and dimensions
+	// If the image is outsize the canvas, move it back in....
+	// NB Allow a safety buffer of astlabPanBorder (screen) pixels
 
-	//++AMN++ This almost works for the zoomed-out version but (a) it goes all wrong for zoomed-in and (b) the panning is slower than the mouse moves...
-    // sect.x0 = Math.min(0, sect.xcen - (sect.width/(2*sect.zoom)));
-    // sect.y0 = Math.min(0, sect.ycen - (sect.height/(2*sect.zoom)));
-    // sect.x1 = Math.max(this.raw.width, sect.xcen + (sect.width/(2*sect.zoom)));
-    // sect.y1 = Math.max(this.raw.height, sect.ycen + (sect.height/(2*sect.zoom)));
+	border = JS9.globalOpts.astlabPanBorder;
+
+		// If display centre means that the image will have less than "border" pixels to the right or left, move it back
+    if(sect.xcen <= ((border - sect.width)/(2*sect.zoom)) ) {
+		sect.xcen = ((border - sect.width)/(2*sect.zoom));
+		//
+	} else if (sect.xcen >= (((sect.width-border)/(2*sect.zoom)) + this.raw.width) ) {
+		sect.xcen = (((sect.width-border)/(2*sect.zoom)) + this.raw.width);
+	}
+
+		// If display centre means that the image will have less than "border" pixels to the top or bottom, move it back
+    if(sect.ycen <= ((border - sect.height)/(2*sect.zoom)) ) {
+		sect.ycen = ((border - sect.height)/(2*sect.zoom));
+	} else if (sect.ycen >= (((sect.height-border)/(2*sect.zoom)) + this.raw.height) ) {
+		sect.ycen = (((sect.height-border)/(2*sect.zoom)) + this.raw.height);
+	}
+
+
+	// Calculate edges of view window in image coordinates ignoring the size of the image
 	sect.x0 = sect.xcen - (sect.width/(2*sect.zoom));
-    sect.y0 = sect.ycen - (sect.height/(2*sect.zoom));
+	sect.y0 = sect.ycen - (sect.height/(2*sect.zoom));
     sect.x1 = sect.xcen + (sect.width/(2*sect.zoom));
     sect.y1 = sect.ycen + (sect.height/(2*sect.zoom));
-	console.log("++FLGb: bounding box for sect:");
-	amnsect(sect);
-	// make sure we're within bounds while maintaining section dimensions
-    if( sect.x0 < 0 ){
-		if( JS9.globalOpts.panWithinDisplay ){
-				sect.x1 -= sect.x0;
-		} else {
+	sect.ix = 0;
+	sect.iy = 0;
+
+
+
+	// Recaluate limits is zoom is outwith the image
+	// This is different depending on whether panWithinDisplay is set or not....
+	if(JS9.globalOpts.panWithinDisplay) {
+		// AMN This not working yet. Do not use panWithinDisplay
+					// Fix X range if outside image
+		if (sect.x0 < 0) {
+				// Offset (in display coords)
+			sect.x1 -= sect.x0;
+			sect.x0 = 0;
+		}
+		if (sect.x1 > this.raw.width) {
+			sect.x0 -= (sect.x1 - this.raw.width);
+			sect.x1 = this.raw.width;
+		}
+					// Fix Y range if outside image
+		if (sect.y0 < 0) {
+				// Offset (in display coords)
+			sect.y1 -= sect.y0;
+			sect.y0 = 0;
+		}
+		if (sect.y1 > this.raw.height) {
+			sect.y0 -= (sect.y1 - this.raw.height);
+			sect.y1 = this.raw.height;
+		}
+		// panWithinDisplay not set
+	} else {
+			// Fix X range if outside image
+		if (sect.x0 < 0) {
+				// Offset (in display coords)
 			sect.ix = sect.x0 * sect.zoom;
+			sect.x0 = 0;
 		}
-        sect.x0 = 0;
-    }
-    if( sect.y0 < 0 ){
-		if( JS9.globalOpts.panWithinDisplay ){
-				sect.y1 -= sect.y0;
-		} else {
+		if (sect.x1 > this.raw.width) {
+			sect.ix = sect.ix + ((sect.x1 - this.raw.width) * sect.zoom);
+			sect.x1 = this.raw.width;
+		}
+					// Fix Y range if outside image
+		if (sect.y0 < 0) {
+				// Offset (in display coords)
 			sect.iy = sect.y0 * sect.zoom;
+			sect.y0 = 0;
 		}
-        sect.y0 = 0;
-    }
-    if( sect.x1 > this.raw.width ){
-		if( JS9.globalOpts.panWithinDisplay ){
-				sect.x0 -= (sect.x1 - this.raw.width);
-		} else {
-			sect.ix = (sect.x1 - this.raw.width) * sect.zoom;
+		if (sect.y1 > this.raw.height) {
+			sect.iy = sect.iy + ((sect.y1 - this.raw.height) * sect.zoom);
+			sect.y1 = this.raw.height;
 		}
-        sect.x1 = this.raw.width;
-    }
-    if( sect.y1 > this.raw.height ){
-		if( JS9.globalOpts.panWithinDisplay ){
-				sect.y0 -= (sect.y1 - this.raw.height);
-		} else {
-			sect.iy = (sect.y1 - this.raw.height) * sect.zoom;
-		}
-        sect.y1 = this.raw.height;
-    }
-	console.log("++FLGb: After boundary checks:");
-	amnsect(sect);
-    // for offset images, maybe display more of the image
-    if( sect.ix > 0 && sect.x0 > 0 ){
-		xtra =  Math.min(sect.ix, sect.x0);
-		sect.x0 -= xtra;
-		sect.ix += xtra * sect.zoom;
-    }
-    if( sect.ix < 0 && sect.x1 < this.raw.width ){
-		xtra =  Math.min(this.raw.width - sect.x1, Math.abs(sect.ix));
-		sect.x1 += xtra;
-		sect.ix -= xtra * sect.zoom;
-    }
-    if( sect.iy > 0 && sect.y0 > 0 ){
-		xtra =  Math.min(sect.iy, sect.y0);
-		sect.y0 -= xtra;
-		sect.iy += xtra * sect.zoom;
-    }
-    if( sect.iy < 0 && sect.y1 < this.raw.height ){
-		xtra =  Math.min(this.raw.height - sect.y1, Math.abs(sect.iy));
-		sect.y1 += xtra;
-		sect.iy -= xtra * sect.zoom;
-    }
-    // final check: make sure we're within bounds
-    sect.x0 = Math.max(0, sect.x0);
-    sect.x1 = Math.min(this.raw.width, sect.x1);
-    sect.y0 = Math.max(0, sect.y0);
-    sect.y1 = Math.min(this.raw.height, sect.y1);
+	}
+
     // final integer dimensions
     sect.x0 = Math.floor(sect.x0);
     sect.y0 = Math.floor(sect.y0);
@@ -2112,14 +2105,12 @@ JS9.Image.prototype.mkSection = function(...args){
     sect.height  = Math.ceil((sect.y1 - sect.y0) * sect.zoom);
     // sanity check
     if( sect.width <= 0 || sect.height <= 0 ){
-	s = sprintf("invalid image section: %s,%s [%s,%s, %s,%s, %s]",
-		    sect.width, sect.height,
-		    sect.x0, sect.y0, sect.x1, sect.y1,
-		    sect.zoom);
-	JS9.error(s);
+		s = sprintf("invalid image section: %s,%s [%s,%s, %s,%s, %s]",
+				sect.width, sect.height,
+				sect.x0, sect.y0, sect.x1, sect.y1,
+				sect.zoom);
+		JS9.error(s);
     }
-	console.log("++FLGc: final calculated sect:");
-	amnsect(sect);
     // put zoom back into params
     this.params.zoom = sect.zoom;
     // allow chaining
